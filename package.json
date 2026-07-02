@@ -1,0 +1,17 @@
+{
+  "name": "pastel-chat",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n WEB,API -c magenta,cyan \"npm run dev -w @chat/web\" \"npm run dev -w @chat/api\"",
+    "build": "npm run build -w @chat/shared && npm run build -w @chat/web && npm run build -w @chat/api",
+    "test": "npm run test -w @chat/api && npm run test -w @chat/web",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  }
+}
