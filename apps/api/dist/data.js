@@ -1,36 +1,84 @@
-import { db } from './db.js';
+import { db } from "./db.js";
 export function mapUser(row) {
     return {
-        id: String(row.id), tag: String(row.tag), firstName: String(row.first_name),
-        lastName: String(row.last_name), avatarColor: String(row.avatar_color), createdAt: String(row.created_at),
+        id: String(row.id),
+        tag: String(row.tag),
+        firstName: String(row.first_name),
+        lastName: String(row.last_name),
+        avatarColor: String(row.avatar_color),
+        createdAt: String(row.created_at),
+        publicKey: row.public_key
+            ? JSON.parse(String(row.public_key))
+            : null,
     };
 }
 function getAttachment(messageId) {
-    const row = db.prepare('SELECT * FROM attachments WHERE message_id = ?').get(messageId);
-    return row ? {
-        id: String(row.id), kind: row.kind, name: String(row.name),
-        mimeType: String(row.mime_type), size: Number(row.size), url: `/uploads/${String(row.storage_name)}`,
-    } : null;
+    const row = db
+        .prepare("SELECT * FROM attachments WHERE message_id = ?")
+        .get(messageId);
+    return row
+        ? {
+            id: String(row.id),
+            kind: row.kind,
+            name: String(row.name),
+            mimeType: String(row.mime_type),
+            size: Number(row.size),
+            url: `/api/uploads/${String(row.storage_name)}`,
+            encryptionIv: row.encryption_iv ? String(row.encryption_iv) : null,
+        }
+        : null;
+}
+function getMessageReference(messageId) {
+    if (!messageId)
+        return null;
+    const row = db
+        .prepare(`SELECT m.id, m.sender_id, m.text, a.name attachment_name
+    FROM messages m LEFT JOIN attachments a ON a.message_id = m.id WHERE m.id = ?`)
+        .get(messageId);
+    return row
+        ? {
+            id: String(row.id),
+            senderId: String(row.sender_id),
+            text: String(row.text),
+            attachmentName: row.attachment_name
+                ? String(row.attachment_name)
+                : null,
+        }
+        : null;
 }
 export function getMessage(messageId) {
-    const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
-    const reactionRows = db.prepare('SELECT user_id, emoji FROM reactions WHERE message_id = ?').all(messageId);
+    const row = db
+        .prepare("SELECT * FROM messages WHERE id = ?")
+        .get(messageId);
+    const reactionRows = db
+        .prepare("SELECT user_id, emoji FROM reactions WHERE message_id = ?")
+        .all(messageId);
     const reactions = {};
     for (const reaction of reactionRows) {
         const emoji = String(reaction.emoji);
         (reactions[emoji] ??= []).push(String(reaction.user_id));
     }
     return {
-        id: String(row.id), conversationId: String(row.conversation_id), senderId: String(row.sender_id),
-        text: String(row.text), createdAt: String(row.created_at), editedAt: row.edited_at ? String(row.edited_at) : null,
-        attachment: getAttachment(messageId), reactions,
+        id: String(row.id),
+        conversationId: String(row.conversation_id),
+        senderId: String(row.sender_id),
+        text: String(row.text),
+        createdAt: String(row.created_at),
+        editedAt: row.edited_at ? String(row.edited_at) : null,
+        attachment: getAttachment(messageId),
+        reactions,
+        replyTo: getMessageReference(row.reply_to_message_id),
+        forwardedFrom: getMessageReference(row.forwarded_from_message_id),
     };
 }
 export function assertMember(conversationId, userId) {
-    return Boolean(db.prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?').get(conversationId, userId));
+    return Boolean(db
+        .prepare("SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?")
+        .get(conversationId, userId));
 }
 export function getConversation(conversationId, userId) {
-    const row = db.prepare(`
+    const row = db
+        .prepare(`
     SELECT c.*, u.id user_id, u.tag, u.first_name, u.last_name, u.avatar_color, u.created_at user_created_at,
       (SELECT id FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) last_message_id,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND
@@ -39,20 +87,35 @@ export function getConversation(conversationId, userId) {
     JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
     JOIN conversation_members other ON other.conversation_id = c.id AND other.user_id != ?
     JOIN users u ON u.id = other.user_id WHERE c.id = ?
-  `).get(userId, userId, userId, conversationId);
+  `)
+        .get(userId, userId, userId, conversationId);
     return {
-        id: String(row.id), accent: String(row.accent), updatedAt: String(row.updated_at),
-        unreadCount: Number(row.unread_count), lastMessage: row.last_message_id ? getMessage(String(row.last_message_id)) : null,
-        participant: mapUser({ id: row.user_id, tag: row.tag, first_name: row.first_name, last_name: row.last_name,
-            avatar_color: row.avatar_color, created_at: row.user_created_at }),
+        id: String(row.id),
+        accent: String(row.accent),
+        updatedAt: String(row.updated_at),
+        unreadCount: Number(row.unread_count),
+        lastMessage: row.last_message_id
+            ? getMessage(String(row.last_message_id))
+            : null,
+        participant: mapUser({
+            id: row.user_id,
+            tag: row.tag,
+            first_name: row.first_name,
+            last_name: row.last_name,
+            avatar_color: row.avatar_color,
+            created_at: row.user_created_at,
+        }),
     };
 }
 export function listConversations(userId) {
-    const ids = db.prepare(`SELECT c.id FROM conversations c JOIN conversation_members cm ON cm.conversation_id = c.id
-    WHERE cm.user_id = ? ORDER BY c.updated_at DESC`).all(userId);
+    const ids = db
+        .prepare(`SELECT c.id FROM conversations c JOIN conversation_members cm ON cm.conversation_id = c.id
+    WHERE cm.user_id = ? ORDER BY c.updated_at DESC`)
+        .all(userId);
     return ids.map(({ id }) => getConversation(id, userId));
 }
 export function conversationMemberIds(conversationId) {
-    return db.prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ?').all(conversationId)
-        .map((row) => row.user_id);
+    return db
+        .prepare("SELECT user_id FROM conversation_members WHERE conversation_id = ?")
+        .all(conversationId).map((row) => row.user_id);
 }

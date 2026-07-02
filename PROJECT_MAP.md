@@ -4,7 +4,8 @@
 
 ```text
 Przeglądarka (React)
-  ├── REST: konta, rozmowy, historia, upload, wyszukiwanie
+  ├── Web Crypto: ECDH + HKDF + AES-256-GCM przed wysłaniem
+  ├── REST: konta, szyfrogramy rozmów, upload i historia
   └── Socket.IO: nowe wiadomości, reakcje, pisanie, obecność
                          │
                     Node.js API
@@ -43,9 +44,10 @@ Chaty/
 ## Model danych
 
 - `users` — tag, imię, nazwisko, hash hasła i kolor avatara.
+- `users.public_key` oraz zaszyfrowany pakiet klucza prywatnego — materiał E2EE.
 - `conversations` — rozmowa oraz wybrany pastelowy akcent.
 - `conversation_members` — uczestnicy i znacznik ostatniego odczytu.
-- `messages` — treść, nadawca oraz czas wysłania.
+- `messages` — treść, nadawca, czas wysłania, odpowiedź i źródło przekazania.
 - `attachments` — metadane zdjęć, PDF-ów, plików i głosówek.
 - `reactions` — emotki przypisane do wiadomości i użytkownika.
 
@@ -57,3 +59,13 @@ Chaty/
 4. Klient emituje chwilowy stan pisania; nie jest on zapisywany w bazie.
 5. Załączniki są wysyłane jako `multipart/form-data`, a katalog mediów powstaje z historii rozmowy.
 6. Wyszukiwanie filtruje treść bieżącej rozmowy; API obsługuje również zapytanie `q`.
+7. Odpowiedź zapisuje odwołanie do wiadomości z tej samej rozmowy.
+8. Przekazanie tworzy nową wiadomość w wybranej rozmowie i zachowuje źródło.
+9. Przekazywanie E2EE odbywa się po stronie klienta: lokalne odszyfrowanie i ponowne zaszyfrowanie dla rozmowy docelowej.
+
+## Zabezpieczenia i realtime
+
+- Pokoje Socket.IO sprawdzają członkostwo przed dołączeniem i wysłaniem stanu pisania.
+- Załączniki nie są publicznym katalogiem; API wydaje je tylko członkom rozmowy.
+- Obecność zlicza wszystkie aktywne karty użytkownika.
+- Klient utrzymuje jedno połączenie Socket.IO i opuszcza pokój poprzedniej rozmowy.
